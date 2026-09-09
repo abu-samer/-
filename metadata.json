@@ -1,0 +1,6 @@
+{
+  "name": "5-a-Side Match Player Ratings",
+  "description": "Minimalist, sleek match player rating card and squad selection with day-locked Tuesday/Wednesday voting and anonymous feedback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
