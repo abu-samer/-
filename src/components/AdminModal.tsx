@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { ADMIN_PASSWORD } from '../utils/helpers';
-import { Shield, ShieldCheck, Lock, X, LogOut, KeyRound, CalendarCheck, CalendarX } from 'lucide-react';
+import { Shield, ShieldCheck, Lock, X, LogOut, KeyRound, CalendarCheck, CalendarX, Trash2, CheckCircle2 } from 'lucide-react';
 
 interface AdminModalProps {
   isOpen: boolean;
   isAdmin: boolean;
   simulateVotingOpen?: boolean | null;
   onToggleSimulate?: () => void;
+  onClearAllVotesAndComments?: () => void;
   onClose: () => void;
   onSuccess: () => void;
   onLogout: () => void;
@@ -17,12 +18,15 @@ export default function AdminModal({
   isAdmin,
   simulateVotingOpen,
   onToggleSimulate,
+  onClearAllVotesAndComments,
   onClose,
   onSuccess,
   onLogout,
 }: AdminModalProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
+  const [isConfirmingClearAll, setIsConfirmingClearAll] = useState(false);
+  const [clearAllSuccess, setClearAllSuccess] = useState(false);
 
   if (!isOpen) return null;
 
@@ -111,6 +115,54 @@ export default function AdminModal({
                     </>
                   )}
                 </button>
+              </div>
+            )}
+
+            {/* Global reset of all votes and comments across all players */}
+            {onClearAllVotesAndComments && (
+              <div className="w-full">
+                {isConfirmingClearAll ? (
+                  <div className="p-3 rounded-xl bg-rose-950/90 border border-rose-800 space-y-2 text-center animate-in fade-in">
+                    <p className="text-xs text-rose-200 font-semibold leading-relaxed">
+                      هل أنت متأكد من تصفير ومسح جميع تقييمات وتعليقات كل اللاعبين لهذه المباراة بالكامل؟
+                    </p>
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClearAllVotesAndComments();
+                          setIsConfirmingClearAll(false);
+                          setClearAllSuccess(true);
+                          setTimeout(() => setClearAllSuccess(false), 3000);
+                        }}
+                        className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer transition-colors"
+                      >
+                        نعم، تصفير الكل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsConfirmingClearAll(false)}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs cursor-pointer transition-colors"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                ) : clearAllSuccess ? (
+                  <div className="py-2.5 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold text-center flex items-center justify-center gap-1.5 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>تم مسح جميع التقييمات والتعليقات بنجاح!</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmingClearAll(true)}
+                    className="w-full py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold flex items-center justify-center gap-2 border border-rose-500/30 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>تصفير ومسح كل التقييمات والتعليقات لجميع اللاعبين</span>
+                  </button>
+                )}
               </div>
             )}
 

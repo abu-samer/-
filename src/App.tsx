@@ -42,6 +42,7 @@ export default function App() {
 
   // Simulation toggle for testing Wednesday lock on other days (admin-only)
   const [simulateVotingOpen, setSimulateVotingOpen] = useState<boolean | null>(null);
+  const [isConfirmingResetSquad, setIsConfirmingResetSquad] = useState<boolean>(false);
 
   // Subscribe to real-time shared Firestore match data
   useEffect(() => {
@@ -253,12 +254,107 @@ export default function App() {
     await commitMatchUpdate(newConfig);
   };
 
+  // Action: Delete a single rating record (admin or author of the rating)
+  const handleDeleteRatingRecord = async (playerId: string, recordId: string) => {
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => {
+        if (p.id !== playerId) return p;
+        const targetRecord = (p.history || []).find((r) => r.id === recordId);
+        if (!targetRecord) return p;
+        // Verify permission: admin OR author of this record
+        if (!isAdmin && targetRecord.voterId !== deviceId) return p;
+
+        const newHistory = (p.history || []).filter((r) => r.id !== recordId);
+        return {
+          ...p,
+          history: newHistory,
+          ratings: newHistory.map((r) => r.score),
+        };
+      }),
+    };
+
+    await commitMatchUpdate(newConfig);
+  };
+
+  // Admin action: Clear all ratings for a player
+  const handleClearPlayerRatings = async (playerId: string) => {
+    if (!isAdmin) return;
+
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => {
+        if (p.id !== playerId) return p;
+        return {
+          ...p,
+          history: [],
+          ratings: [],
+        };
+      }),
+    };
+
+    await commitMatchUpdate(newConfig);
+  };
+
+  // Action: Delete a single comment (admin or author of the comment)
+  const handleDeleteComment = async (playerId: string, commentId: string) => {
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => {
+        if (p.id !== playerId) return p;
+        const targetComment = (p.comments || []).find((c) => c.id === commentId);
+        if (!targetComment) return p;
+        // Verify permission: admin OR author of this comment
+        if (!isAdmin && targetComment.voterId !== deviceId) return p;
+
+        return {
+          ...p,
+          comments: (p.comments || []).filter((c) => c.id !== commentId),
+        };
+      }),
+    };
+
+    await commitMatchUpdate(newConfig);
+  };
+
+  // Admin action: Clear all comments for a player
+  const handleClearPlayerComments = async (playerId: string) => {
+    if (!isAdmin) return;
+
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => {
+        if (p.id !== playerId) return p;
+        return {
+          ...p,
+          comments: [],
+        };
+      }),
+    };
+
+    await commitMatchUpdate(newConfig);
+  };
+
+  // Admin action: Clear all ratings & comments for ALL players (start clean match)
+  const handleClearAllVotesAndComments = async () => {
+    if (!isAdmin) return;
+
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => ({
+        ...p,
+        ratings: [],
+        history: [],
+        comments: [],
+      })),
+    };
+
+    await commitMatchUpdate(newConfig);
+  };
+
   // Admin action: Reset all ratings to clean zero
   const handleReset = async () => {
-    if (!isAdmin) {
-      alert('يجب تفعيل صلاحية المسؤول أولاً لإعادة ضبط التشكيلة والتقييمات.');
-      return;
-    }
+    if (!isAdmin) return;
     const freshConfig: MatchConfig = {
       matchTitle: 'تقييمات مباراة الأربعاء',
       matchDate: formatFullArabicDate(),
@@ -266,6 +362,7 @@ export default function App() {
     };
     setSelectedPlayerId(DEFAULT_PLAYERS[0].id);
     await commitMatchUpdate(freshConfig);
+    setIsConfirmingResetSquad(false);
   };
 
   return (
@@ -402,6 +499,10 @@ export default function App() {
               onUpdatePosition={handleUpdatePosition}
               onUpdateAvatar={handleUpdateAvatar}
               onDeletePlayer={handleDeletePlayer}
+              onDeleteRatingRecord={handleDeleteRatingRecord}
+              onClearPlayerRatings={handleClearPlayerRatings}
+              onDeleteComment={handleDeleteComment}
+              onClearPlayerComments={handleClearPlayerComments}
               onPreviousPlayer={handlePrevious}
               onNextPlayer={handleNext}
             />
@@ -429,6 +530,7 @@ export default function App() {
         onToggleSimulate={() =>
           setSimulateVotingOpen((prev) => (prev === null ? !realDateStatus.isOpen : null))
         }
+        onClearAllVotesAndComments={handleClearAllVotesAndComments}
         onClose={() => setIsAdminModalOpen(false)}
         onSuccess={() => setIsAdmin(true)}
         onLogout={() => setIsAdmin(false)}
@@ -441,13 +543,31 @@ export default function App() {
           <span>نظام تقييم نظيف • تقييم واحد لكل جهاز لكل مباراة</span>
         </span>
         {isAdmin && (
-          <button
-            onClick={handleReset}
-            className="inline-flex items-center gap-1 hover:text-rose-400 transition-colors cursor-pointer text-neutral-500"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>تصفير وإعادة ضبط التشكيلة</span>
-          </button>
+          isConfirmingResetSquad ? (
+            <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-800 px-2.5 py-1 rounded-lg text-xs animate-in fade-in">
+              <span className="text-rose-200">تصفير التشكيلة؟</span>
+              <button
+                onClick={handleReset}
+                className="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold cursor-pointer transition-colors"
+              >
+                تأكيد
+              </button>
+              <button
+                onClick={() => setIsConfirmingResetSquad(false)}
+                className="px-1.5 py-0.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded cursor-pointer transition-colors"
+              >
+                إلغاء
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsConfirmingResetSquad(true)}
+              className="inline-flex items-center gap-1 hover:text-rose-400 transition-colors cursor-pointer text-neutral-500"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>تصفير وإعادة ضبط التشكيلة</span>
+            </button>
+          )
         )}
       </footer>
     </div>

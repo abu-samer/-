@@ -40,6 +40,10 @@ interface PlayerDetailCardProps {
   onUpdatePosition: (playerId: string, newPosition: string) => void;
   onUpdateAvatar: (playerId: string, avatarUrl: string) => void;
   onDeletePlayer: (playerId: string) => void;
+  onDeleteRatingRecord?: (playerId: string, recordId: string) => void;
+  onClearPlayerRatings?: (playerId: string) => void;
+  onDeleteComment?: (playerId: string, commentId: string) => void;
+  onClearPlayerComments?: (playerId: string) => void;
   onPreviousPlayer?: () => void;
   onNextPlayer?: () => void;
 }
@@ -56,6 +60,10 @@ export default function PlayerDetailCard({
   onUpdatePosition,
   onUpdateAvatar,
   onDeletePlayer,
+  onDeleteRatingRecord,
+  onClearPlayerRatings,
+  onDeleteComment,
+  onClearPlayerComments,
   onPreviousPlayer,
   onNextPlayer,
 }: PlayerDetailCardProps) {
@@ -83,6 +91,10 @@ export default function PlayerDetailCard({
 
   // Inline Delete Confirmation
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
+  const [isConfirmingClearRatings, setIsConfirmingClearRatings] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [isConfirmingClearComments, setIsConfirmingClearComments] = useState(false);
 
   const sliderInputId = useId();
 
@@ -244,13 +256,31 @@ export default function PlayerDetailCard({
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onClick={() => setIsConfirmingDelete(true)}
-                      title="حذف اللاعب"
-                      className="text-neutral-400 hover:text-rose-400 p-1 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {isConfirmingDelete ? (
+                      <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-800 px-1.5 py-0.5 rounded-lg animate-in fade-in">
+                        <span className="text-[10px] text-rose-200">حذف اللاعب؟</span>
+                        <button
+                          onClick={executeDelete}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer transition-colors"
+                        >
+                          نعم
+                        </button>
+                        <button
+                          onClick={() => setIsConfirmingDelete(false)}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 cursor-pointer transition-colors"
+                        >
+                          لا
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsConfirmingDelete(true)}
+                        title="حذف اللاعب"
+                        className="text-neutral-400 hover:text-rose-400 p-1 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -538,9 +568,47 @@ export default function PlayerDetailCard({
                 سجل التقييمات المسجلة ({player.history.length})
               </h3>
             </div>
-            <span className="text-[10px] text-neutral-500">
-              لكل مقيّم لون مميز خاص به
-            </span>
+            <div className="flex items-center gap-2">
+              {isAdmin && player.history.length > 0 && onClearPlayerRatings && (
+                <div>
+                  {isConfirmingClearRatings ? (
+                    <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-800 px-2 py-0.5 rounded-lg animate-in fade-in">
+                      <span className="text-[10px] text-rose-200">مسح كل تقييمات اللاعب؟</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClearPlayerRatings(player.id);
+                          setIsConfirmingClearRatings(false);
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer transition-colors"
+                      >
+                        نعم، مسح
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsConfirmingClearRatings(false)}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 cursor-pointer transition-colors"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsConfirmingClearRatings(true)}
+                      className="text-[10px] px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                      title="خاص بالأدمن: تصفير جميع تقييمات هذا اللاعب"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>مسح كل التقييمات</span>
+                    </button>
+                  )}
+                </div>
+              )}
+              <span className="text-[10px] text-neutral-500 hidden sm:inline">
+                لكل مقيّم لون مميز خاص به
+              </span>
+            </div>
           </div>
 
           {player.history.length === 0 ? (
@@ -586,13 +654,51 @@ export default function PlayerDetailCard({
                       </div>
                     </div>
 
-                    {/* Colored Score Display */}
-                    <div
-                      className={`flex items-center gap-1 px-3 py-1 rounded-lg border font-mono ${color.pill}`}
-                    >
-                      <Star className="w-3.5 h-3.5 fill-current" />
-                      <span className="text-xs font-black">{record.score}</span>
-                      <span className="text-[10px] opacity-70">/ 10</span>
+                    {/* Colored Score Display & Admin/Voter Delete Action */}
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`flex items-center gap-1 px-3 py-1 rounded-lg border font-mono ${color.pill}`}
+                      >
+                        <Star className="w-3.5 h-3.5 fill-current" />
+                        <span className="text-xs font-black">{record.score}</span>
+                        <span className="text-[10px] opacity-70">/ 10</span>
+                      </div>
+
+                      {(isAdmin || isMyVote) && onDeleteRatingRecord && (
+                        <div className="flex items-center">
+                          {deletingRecordId === record.id ? (
+                            <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-800 px-1.5 py-0.5 rounded-lg animate-in fade-in">
+                              <span className="text-[10px] text-rose-200">حذف؟</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onDeleteRatingRecord(player.id, record.id);
+                                  setDeletingRecordId(null);
+                                }}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer transition-colors"
+                              >
+                                نعم
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingRecordId(null)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 cursor-pointer transition-colors"
+                              >
+                                لا
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setDeletingRecordId(record.id)}
+                              className="p-1.5 rounded-lg bg-neutral-900/80 hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400 border border-neutral-700/60 hover:border-rose-500/40 transition-colors cursor-pointer"
+                              title={isAdmin ? "حذف هذا التقييم (أدمن)" : "حذف تقييمك"}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -603,11 +709,49 @@ export default function PlayerDetailCard({
 
         {/* SECTION: Past Anonymous Comments */}
         <div className="border-t border-neutral-800/80 pt-5">
-          <div className="flex items-center gap-2 mb-3">
-            <MessageSquare className="w-4 h-4 text-neutral-400" />
-            <h3 className="text-xs font-bold text-neutral-300">
-              تعليقات وملاحظات المباراة ({player.comments.length})
-            </h3>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-neutral-400" />
+              <h3 className="text-xs font-bold text-neutral-300">
+                تعليقات وملاحظات المباراة ({player.comments.length})
+              </h3>
+            </div>
+            {isAdmin && player.comments.length > 0 && onClearPlayerComments && (
+              <div>
+                {isConfirmingClearComments ? (
+                  <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-800 px-2 py-0.5 rounded-lg animate-in fade-in">
+                    <span className="text-[10px] text-rose-200">مسح كل التعليقات؟</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClearPlayerComments(player.id);
+                        setIsConfirmingClearComments(false);
+                      }}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer transition-colors"
+                    >
+                      نعم، مسح
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsConfirmingClearComments(false)}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 cursor-pointer transition-colors"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmingClearComments(true)}
+                    className="text-[10px] px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                    title="خاص بالأدمن: مسح جميع التعليقات لهذا اللاعب"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>مسح كل التعليقات</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {player.comments.length === 0 ? (
@@ -628,19 +772,63 @@ export default function PlayerDetailCard({
                 return (
                   <div
                     key={cmt.id}
-                    className="p-3 rounded-xl bg-neutral-950/80 border border-neutral-800/80 text-right"
+                    className="p-3 rounded-xl bg-neutral-950/80 border border-neutral-800/80 text-right group relative"
                   >
                     <div className="flex items-center justify-between text-[11px] mb-1">
-                      <span
-                        className={`font-semibold ${
-                          color ? color.text : 'text-emerald-400'
-                        }`}
-                      >
-                        {isMyComment ? 'أنت (تعليقك)' : 'مجهول'}
-                      </span>
-                      <span className="text-neutral-500 font-mono">
-                        {formatTimeAgoArabic(cmt.timestamp)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`font-semibold ${
+                            color ? color.text : 'text-emerald-400'
+                          }`}
+                        >
+                          {isMyComment ? 'أنت (تعليقك)' : 'مجهول'}
+                        </span>
+                        {isMyComment && (
+                          <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1 py-0.2 rounded font-bold">
+                            جهازك
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-neutral-500 font-mono text-[10px]">
+                          {formatTimeAgoArabic(cmt.timestamp)}
+                        </span>
+                        {(isAdmin || isMyComment) && onDeleteComment && (
+                          <div className="flex items-center">
+                            {deletingCommentId === cmt.id ? (
+                              <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-800 px-1.5 py-0.5 rounded-lg animate-in fade-in">
+                                <span className="text-[10px] text-rose-200">حذف؟</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onDeleteComment(player.id, cmt.id);
+                                    setDeletingCommentId(null);
+                                  }}
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer transition-colors"
+                                >
+                                  نعم
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingCommentId(null)}
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 cursor-pointer transition-colors"
+                                >
+                                  لا
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setDeletingCommentId(cmt.id)}
+                                className="p-1 rounded bg-neutral-900 hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400 border border-neutral-800 hover:border-rose-500/30 transition-colors cursor-pointer"
+                                title={isAdmin ? "حذف هذا التعليق (أدمن)" : "حذف تعليقك"}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <p className="text-xs text-neutral-200 leading-relaxed break-words">
                       {cmt.text}
