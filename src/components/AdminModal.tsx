@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { ADMIN_PASSWORD } from '../utils/helpers';
-import { Shield, ShieldCheck, Lock, X, LogOut, KeyRound } from 'lucide-react';
+import { Shield, ShieldCheck, Lock, X, LogOut, KeyRound, CalendarCheck, CalendarX } from 'lucide-react';
 
 interface AdminModalProps {
   isOpen: boolean;
   isAdmin: boolean;
+  simulateVotingOpen?: boolean | null;
+  onToggleSimulate?: () => void;
   onClose: () => void;
   onSuccess: () => void;
   onLogout: () => void;
@@ -13,6 +15,8 @@ interface AdminModalProps {
 export default function AdminModal({
   isOpen,
   isAdmin,
+  simulateVotingOpen,
+  onToggleSimulate,
   onClose,
   onSuccess,
   onLogout,
@@ -74,6 +78,41 @@ export default function AdminModal({
               <ShieldCheck className="w-4 h-4 flex-shrink-0" />
               <span>أنت الآن في وضع المسؤول. يمكنك تغيير الأسماء وإضافة أو حذف أي لاعب.</span>
             </div>
+
+            {/* Admin-only Wednesday simulation toggle */}
+            {onToggleSimulate && (
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 text-xs flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-white">فتح التصويت (محاكاة الأربعاء)</p>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">
+                    {simulateVotingOpen !== null
+                      ? 'وضع المحاكاة مفعّل الآن للتجربة'
+                      : 'التصويت يتبع التوقيت الفعلي (الأربعاء فقط)'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onToggleSimulate}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    simulateVotingOpen !== null
+                      ? 'bg-amber-500 text-neutral-950'
+                      : 'bg-neutral-800 text-neutral-300 hover:text-white'
+                  }`}
+                >
+                  {simulateVotingOpen !== null ? (
+                    <>
+                      <CalendarCheck className="w-3.5 h-3.5" />
+                      <span>مفتوح (محاكاة)</span>
+                    </>
+                  ) : (
+                    <>
+                      <CalendarX className="w-3.5 h-3.5" />
+                      <span>تفعيل المحاكاة</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             <button
               onClick={() => {

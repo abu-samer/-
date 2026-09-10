@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { MatchConfig, Player, MatchRatingRecord } from './types';
 import {
   loadSavedMatch,
@@ -9,6 +9,7 @@ import {
   getDeviceId,
   getVoterColorIndex,
 } from './utils/helpers';
+import { subscribeToSharedMatch, updateSharedMatch } from './firebase';
 import PlayerBar from './components/PlayerBar';
 import PlayerDetailCard from './components/PlayerDetailCard';
 import AdminModal from './components/AdminModal';
@@ -21,6 +22,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Sparkles,
+  Cloud,
 } from 'lucide-react';
 
 export default function App() {
@@ -28,6 +30,7 @@ export default function App() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>(
     () => matchData.players[0]?.id || 'player-1'
   );
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Persistent unique identifier for this device
   const deviceId = useMemo(() => getDeviceId(), []);
@@ -37,13 +40,44 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
 
-  // Simulation toggle for testing Wednesday lock on other days
+  // Simulation toggle for testing Wednesday lock on other days (admin-only)
   const [simulateVotingOpen, setSimulateVotingOpen] = useState<boolean | null>(null);
 
-  // Save to localStorage whenever match data updates
+  // Subscribe to real-time shared Firestore match data
   useEffect(() => {
-    saveMatchConfig(matchData);
-  }, [matchData]);
+    const unsubscribe = subscribeToSharedMatch(
+      (sharedMatch) => {
+        setMatchData(sharedMatch);
+        // If current selected player does not exist in updated list, select first available
+        if (sharedMatch.players.length > 0) {
+          setSelectedPlayerId((prev) => {
+            const exists = sharedMatch.players.some((p) => p.id === prev);
+            return exists ? prev : sharedMatch.players[0].id;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Realtime subscription error, using local data:', err);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Helper to persist updates to shared cloud database
+  const commitMatchUpdate = useCallback(async (newConfig: MatchConfig) => {
+    setMatchData(newConfig);
+    setIsSyncing(true);
+    try {
+      await updateSharedMatch(newConfig);
+    } catch (err) {
+      console.error('Failed to sync update to cloud:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
 
   // Determine if today is Wednesday (Wednesday only)
   const realDateStatus = isVotingOpen();
@@ -74,72 +108,72 @@ export default function App() {
   };
 
   // Submit or Update Rating (1 rating per device per player per match session)
-  const handleSubmitRating = (playerId: string, score: number, commentText?: string) => {
+  const handleSubmitRating = async (playerId: string, score: number, commentText?: string) => {
     if (!votingIsOpen) return;
 
     const todayFormattedDate = formatFullArabicDate();
 
-    setMatchData((prev) => {
-      const updatedPlayers = prev.players.map((player) => {
-        if (player.id !== playerId) return player;
+    const updatedPlayers = matchData.players.map((player) => {
+      if (player.id !== playerId) return player;
 
-        const currentHistory = player.history || [];
-        const existingVoteIndex = currentHistory.findIndex(
-          (h) => h.voterId === deviceId && h.date === todayFormattedDate
+      const currentHistory = player.history || [];
+      const existingVoteIndex = currentHistory.findIndex(
+        (h) => h.voterId === deviceId && h.date === todayFormattedDate
+      );
+
+      let newHistory: MatchRatingRecord[];
+
+      if (existingVoteIndex >= 0) {
+        // Update the device's existing vote for this match
+        newHistory = currentHistory.map((rec, idx) =>
+          idx === existingVoteIndex ? { ...rec, score, timestamp: Date.now() } : rec
         );
-
-        let newHistory: MatchRatingRecord[];
-
-        if (existingVoteIndex >= 0) {
-          // Update the device's existing vote for this match
-          newHistory = currentHistory.map((rec, idx) =>
-            idx === existingVoteIndex ? { ...rec, score, timestamp: Date.now() } : rec
-          );
-        } else {
-          // Register a new distinct vote with voter number and distinct color
-          const voterNumber = currentHistory.length + 1;
-          const newRecord: MatchRatingRecord = {
-            id: `h-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-            voterId: deviceId,
-            colorIndex: myColorIndex,
-            voterNumber,
-            date: todayFormattedDate,
-            score,
-            timestamp: Date.now(),
-          };
-          newHistory = [newRecord, ...currentHistory];
-        }
-
-        // Add optional comment with voter's color
-        const newComments = commentText
-          ? [
-              {
-                id: `cmt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-                voterId: deviceId,
-                colorIndex: myColorIndex,
-                text: commentText,
-                timestamp: Date.now(),
-              },
-              ...player.comments,
-            ]
-          : player.comments;
-
-        return {
-          ...player,
-          history: newHistory,
-          comments: newComments,
+      } else {
+        // Register a new distinct vote with voter number and distinct color
+        const voterNumber = currentHistory.length + 1;
+        const newRecord: MatchRatingRecord = {
+          id: `h-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          voterId: deviceId,
+          colorIndex: myColorIndex,
+          voterNumber,
+          date: todayFormattedDate,
+          score,
+          timestamp: Date.now(),
         };
-      });
+        newHistory = [newRecord, ...currentHistory];
+      }
+
+      // Add optional comment with voter's color
+      const newComments = commentText
+        ? [
+            {
+              id: `cmt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              voterId: deviceId,
+              colorIndex: myColorIndex,
+              text: commentText,
+              timestamp: Date.now(),
+            },
+            ...player.comments,
+          ]
+        : player.comments;
 
       return {
-        ...prev,
-        players: updatedPlayers,
+        ...player,
+        history: newHistory,
+        comments: newComments,
       };
     });
+
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: updatedPlayers,
+    };
+
+    await commitMatchUpdate(newConfig);
   };
 
   // Admin action: Add new player slot
-  const handleAddPlayerSlot = () => {
+  const handleAddPlayerSlot = async () => {
     if (!isAdmin) return;
 
     const nextNumber = matchData.players.length + 1;
@@ -153,65 +187,74 @@ export default function App() {
       comments: [],
     };
 
-    setMatchData((prev) => ({
-      ...prev,
-      players: [...prev.players, newPlayer],
-    }));
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: [...matchData.players, newPlayer],
+    };
+
     setSelectedPlayerId(newPlayer.id);
+    await commitMatchUpdate(newConfig);
   };
 
   // Admin action: Rename a player
-  const handleRenamePlayer = (playerId: string, newName: string) => {
+  const handleRenamePlayer = async (playerId: string, newName: string) => {
     if (!isAdmin) return;
 
-    setMatchData((prev) => ({
-      ...prev,
-      players: prev.players.map((p) => (p.id === playerId ? { ...p, name: newName } : p)),
-    }));
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => (p.id === playerId ? { ...p, name: newName } : p)),
+    };
+
+    await commitMatchUpdate(newConfig);
   };
 
   // Admin action: Update player position in Arabic
-  const handleUpdatePosition = (playerId: string, newPosition: string) => {
+  const handleUpdatePosition = async (playerId: string, newPosition: string) => {
     if (!isAdmin) return;
 
-    setMatchData((prev) => ({
-      ...prev,
-      players: prev.players.map((p) => (p.id === playerId ? { ...p, position: newPosition } : p)),
-    }));
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => (p.id === playerId ? { ...p, position: newPosition } : p)),
+    };
+
+    await commitMatchUpdate(newConfig);
   };
 
   // Admin action: Update player avatar photo
-  const handleUpdateAvatar = (playerId: string, avatarUrl: string) => {
+  const handleUpdateAvatar = async (playerId: string, avatarUrl: string) => {
     if (!isAdmin) return;
 
-    setMatchData((prev) => ({
-      ...prev,
-      players: prev.players.map((p) => (p.id === playerId ? { ...p, avatar: avatarUrl } : p)),
-    }));
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: matchData.players.map((p) => (p.id === playerId ? { ...p, avatar: avatarUrl } : p)),
+    };
+
+    await commitMatchUpdate(newConfig);
   };
 
   // Admin action: Delete a player
-  const handleDeletePlayer = (playerId: string) => {
+  const handleDeletePlayer = async (playerId: string) => {
     if (!isAdmin) return;
 
-    setMatchData((prev) => {
-      const remaining = prev.players.filter((p) => p.id !== playerId);
-      if (remaining.length > 0) {
-        if (selectedPlayerId === playerId) {
-          setSelectedPlayerId(remaining[0].id);
-        }
-      } else {
-        setSelectedPlayerId('');
+    const remaining = matchData.players.filter((p) => p.id !== playerId);
+    if (remaining.length > 0) {
+      if (selectedPlayerId === playerId) {
+        setSelectedPlayerId(remaining[0].id);
       }
-      return {
-        ...prev,
-        players: remaining,
-      };
-    });
+    } else {
+      setSelectedPlayerId('');
+    }
+
+    const newConfig: MatchConfig = {
+      ...matchData,
+      players: remaining,
+    };
+
+    await commitMatchUpdate(newConfig);
   };
 
   // Admin action: Reset all ratings to clean zero
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!isAdmin) {
       alert('يجب تفعيل صلاحية المسؤول أولاً لإعادة ضبط التشكيلة والتقييمات.');
       return;
@@ -221,9 +264,8 @@ export default function App() {
       matchDate: formatFullArabicDate(),
       players: DEFAULT_PLAYERS,
     };
-    setMatchData(freshConfig);
     setSelectedPlayerId(DEFAULT_PLAYERS[0].id);
-    saveMatchConfig(freshConfig);
+    await commitMatchUpdate(freshConfig);
   };
 
   return (
@@ -277,20 +319,22 @@ export default function App() {
               )}
             </button>
 
-            {/* Testing simulation button (subtle) */}
-            <button
-              onClick={() =>
-                setSimulateVotingOpen((prev) => (prev === null ? !realDateStatus.isOpen : null))
-              }
-              title="تجربة فتح أو قفل التصويت (للاختبار في غير يوم الأربعاء)"
-              className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer ${
-                simulateVotingOpen !== null
-                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-semibold'
-                  : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:text-neutral-300'
-              }`}
-            >
-              {simulateVotingOpen !== null ? 'محاكاة يوم' : 'اختبار الأربعاء'}
-            </button>
+            {/* Admin-only simulation toggle */}
+            {isAdmin && (
+              <button
+                onClick={() =>
+                  setSimulateVotingOpen((prev) => (prev === null ? !realDateStatus.isOpen : null))
+                }
+                title="خاص بالأدمن: تجربة فتح أو قفل التصويت (محاكاة يوم الأربعاء)"
+                className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer ${
+                  simulateVotingOpen !== null
+                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-semibold'
+                    : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                {simulateVotingOpen !== null ? 'محاكاة: مفتوح' : 'محاكاة الأربعاء'}
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -381,6 +425,10 @@ export default function App() {
       <AdminModal
         isOpen={isAdminModalOpen}
         isAdmin={isAdmin}
+        simulateVotingOpen={simulateVotingOpen}
+        onToggleSimulate={() =>
+          setSimulateVotingOpen((prev) => (prev === null ? !realDateStatus.isOpen : null))
+        }
         onClose={() => setIsAdminModalOpen(false)}
         onSuccess={() => setIsAdmin(true)}
         onLogout={() => setIsAdmin(false)}

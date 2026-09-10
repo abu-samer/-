@@ -299,9 +299,7 @@ export default function PlayerDetailCard({
               )}
             </div>
 
-            <p className="text-xs text-neutral-400 mt-1">
-              موعد المباراة: <span className="text-neutral-300 font-medium">{matchDate}</span>
-            </p>
+            {/* Player Name and Position */}
           </div>
         </div>
 

@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared Wednesday Match configuration and player ratings
+    match /match_configs/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
